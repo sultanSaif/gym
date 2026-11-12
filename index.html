@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111418">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gym Log">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Gym Log</title>
+<style>
+  :root{
+    --bg:#111418; --card:#1b2027; --line:#2a313b; --text:#e9edf2; --muted:#8a95a5;
+    --accent:#4fd1a5; --accent-dim:#1f4d40; --warn:#f2b35b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-tap-highlight-color:transparent}
+  header{position:sticky;top:0;z-index:5;background:var(--bg);
+    padding:calc(env(safe-area-inset-top) + 12px) 16px 8px;border-bottom:1px solid var(--line)}
+  .top{display:flex;justify-content:space-between;align-items:baseline}
+  h1{font-size:20px;margin:0}
+  .week{color:var(--muted);font-size:14px}
+  .days{display:flex;gap:6px;overflow-x:auto;margin-top:10px;scrollbar-width:none}
+  .days::-webkit-scrollbar{display:none}
+  .days button{flex:0 0 auto;border:1px solid var(--line);background:var(--card);color:var(--muted);
+    border-radius:999px;padding:7px 13px;font:inherit;font-size:14px}
+  .days button.on{background:var(--accent);color:#06221a;border-color:var(--accent);font-weight:600}
+  .days button.today:not(.on){border-color:var(--accent);color:var(--text)}
+  main{padding:12px 16px calc(env(safe-area-inset-bottom) + 24px);max-width:560px;margin:0 auto}
+  .title{font-size:18px;font-weight:600;margin:4px 0 2px}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+  .card.done{border-color:var(--accent-dim)}
+  .ex{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+  .ex-name{font-weight:600}
+  .ex-target{color:var(--muted);font-size:13px;white-space:nowrap}
+  .last{color:var(--muted);font-size:13px;margin:4px 0 8px}
+  .last b{color:var(--warn);font-weight:600}
+  .sets{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .set label{display:block;font-size:11px;color:var(--muted);margin-bottom:3px}
+  .set input{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);
+    border-radius:10px;padding:10px 6px;font:inherit;font-size:17px;text-align:center}
+  .set input:focus{outline:none;border-color:var(--accent)}
+  .hist-btn{background:none;border:0;color:var(--accent);font:inherit;font-size:13px;padding:8px 0 0}
+  .hist{margin-top:6px;font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:6px}
+  .hist div{display:flex;justify-content:space-between;padding:2px 0}
+  .hist span:last-child{color:var(--text)}
+  .note{text-align:center;color:var(--muted);padding:40px 10px;font-size:15px}
+  .tools{display:flex;gap:8px;margin-top:20px}
+  .tools button,.tools label{flex:1;text-align:center;background:var(--card);border:1px solid var(--line);
+    color:var(--text);border-radius:10px;padding:10px;font:inherit;font-size:14px}
+  .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 20px);transform:translateX(-50%);
+    background:var(--accent);color:#06221a;padding:8px 14px;border-radius:999px;font-size:14px;
+    opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><h1>Gym Log</h1><span class="week" id="week"></span></div>
+  <div class="days" id="days"></div>
+</header>
+<main id="main"></main>
+<div class="toast" id="toast"></div>
+
+<script>
+const PLAN = {
+  6:{name:"Upper A", ex:[
+    ["Chest press machine","8–10"],["Seated row machine","8–10"],["Shoulder press machine","10"],
+    ["Lat pulldown (wide grip)","10"],["Cable curl (straight bar)","12"],["Cable triceps pushdown (rope)","12"]]},
+  0:{name:"Lower A", ex:[
+    ["Leg press","10"],["Seated leg curl","12"],["Leg extension","12"],
+    ["Calf raise machine","15"],["Cable crunch (kneeling)","12"]]},
+  1:{name:"Swim + sauna", note:"Easy swim 30 min + sauna. Nothing to log today."},
+  2:{name:"Upper B", ex:[
+    ["Incline chest press machine","10"],["Assisted pull-up machine","8"],["Cable row (close grip, seated)","10"],
+    ["Pec deck (chest fly)","12"],["Cable lateral raise","15"],["Cable overhead triceps extension","12"]]},
+  3:{name:"Lower B", ex:[
+    ["Hack / pendulum squat","8–10"],["Lying leg curl","12"],["Hip thrust / glute drive","10"],
+    ["Leg extension","15"],["Seated calf raise","15"],["Captain’s chair knee raise","12"]]},
+  4:{name:"Arms & shoulders", extra:"+ 20 min boxing technique", ex:[
+    ["Machine preacher curl","12"],["Rope hammer curl on cable","12"],["Assisted dip machine","10"],
+    ["Rope pushdown","15"],["Reverse pec deck (rear delts)","15"],["Shoulder press machine","12"]]},
+  5:{name:"Rest", note:"Rest day. Recover well."}
+};
+const ORDER = [6,0,1,2,3,4,5];
+const SHORT = {6:"Sat",0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri"};
+const KEY = "gymlog.v1";
+
+const todayStr = () => { const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+const slug = (day,name) => day+":"+name.toLowerCase().replace(/[^a-z0-9]+/g,"-");
+
+let db = load();
+function load(){ try{ return JSON.parse(localStorage.getItem(KEY)) || {logs:{}}; }catch{ return {logs:{}}; } }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(db)); }catch(e){ toast("Couldn't save"); } }
+
+function weekNumber(){
+  const dates = Object.values(db.logs).flat().map(e=>e.date).sort();
+  if(!dates.length) return 1;
+  const days = Math.floor((new Date(todayStr()) - new Date(dates[0])) / 864e5);
+  return Math.floor(days/7) + 1;
+}
+const setsFor = i => (weekNumber() > 4 && i < 2) ? 4 : 3;
+
+let current = new Date().getDay();
+
+function renderDays(){
+  const t = new Date().getDay();
+  document.getElementById("days").innerHTML = ORDER.map(d =>
+    `<button class="${d===current?'on':''} ${d===t?'today':''}" data-d="${d}">${SHORT[d]}</button>`).join("");
+  document.querySelectorAll("#days button").forEach(b => b.onclick = () => { current=+b.dataset.d; render(); });
+}
+
+function render(){
+  renderDays();
+  const wk = weekNumber();
+  document.getElementById("week").textContent = "Week " + wk;
+  const p = PLAN[current], m = document.getElementById("main"), today = todayStr();
+  if(p.note){ m.innerHTML = `<div class="title">${p.name}</div><div class="note">${p.note}</div>` + tools(); bindTools(); return; }
+
+  m.innerHTML = `<div class="title">${p.name}</div>
+    <div class="sub">${p.extra ? p.extra+" · " : ""}Rest ~2 min on first two, ~90 s on the rest · kg</div>` +
+    p.ex.map(([name,reps],i) => {
+      const id = slug(current,name), log = db.logs[id] || [];
+      const todayE = log.find(e=>e.date===today);
+      const prev = log.filter(e=>e.date<today).sort((a,b)=>a.date<b.date?1:-1)[0];
+      const n = setsFor(i);
+      const sets = Array.from({length:n},(_,s)=>{
+        const v = todayE?.sets?.[s] ?? "";
+        const ph = prev?.sets?.[s] ?? prev?.sets?.[prev.sets.length-1] ?? "";
+        return `<div class="set"><label>Set ${s+1}</label>
+          <input type="number" inputmode="decimal" step="0.5" min="0" data-id="${id}" data-s="${s}" value="${v}" placeholder="${ph}"></div>`;
+      }).join("");
+      const lastTxt = prev ? `Last (${fmt(prev.date)}): <b>${prev.sets.filter(x=>x!==null).join(" / ")}</b> kg` : "No previous entry";
+      return `<div class="card ${todayE && todayE.sets.some(x=>x!==null)?'done':''}">
+        <div class="ex"><div class="ex-name">${name}</div><div class="ex-target">${n}×${reps}</div></div>
+        <div class="last">${lastTxt}</div>
+        <div class="sets">${sets}</div>
+        ${log.length ? `<button class="hist-btn" data-h="${id}">History</button><div class="hist" id="h-${CSS.escape(id)}" hidden></div>` : ""}
+      </div>`;
+    }).join("") + tools();
+
+  m.querySelectorAll("input[data-id]").forEach(inp => inp.addEventListener("change", onInput));
+  m.querySelectorAll(".hist-btn").forEach(b => b.onclick = () => toggleHist(b.dataset.h));
+  bindTools();
+}
+
+function onInput(e){
+  const {id, s} = e.target.dataset, today = todayStr();
+  const raw = e.target.value.trim(), val = raw==="" ? null : Math.max(0, parseFloat(raw));
+  const log = db.logs[id] = db.logs[id] || [];
+  let entry = log.find(x=>x.date===today);
+  if(!entry){ entry = {date:today, sets:[]}; log.push(entry); }
+  entry.sets[+s] = val;
+  for(let i=0;i<entry.sets.length;i++) if(entry.sets[i]===undefined) entry.sets[i]=null;
+  if(entry.sets.every(x=>x===null)) db.logs[id] = log.filter(x=>x!==entry);
+  save();
+  e.target.closest(".card").classList.toggle("done", !!entry.sets.some(x=>x!==null));
+  toast("Saved");
+}
+
+function toggleHist(id){
+  const el = document.getElementById("h-"+id);
+  if(!el.hidden){ el.hidden = true; return; }
+  const log = (db.logs[id]||[]).slice().sort((a,b)=>a.date<b.date?1:-1).slice(0,12);
+  el.innerHTML = log.map(e=>`<div><span>${fmt(e.date)}</span><span>${e.sets.filter(x=>x!==null).join(" / ")} kg</span></div>`).join("");
+  el.hidden = false;
+}
+
+const fmt = d => new Date(d+"T00:00").toLocaleDateString(undefined,{day:"numeric",month:"short"});
+
+function tools(){
+  return `<div class="tools"><button id="exp">Export backup</button>
+    <label>Import backup<input type="file" id="imp" accept="application/json" hidden></label></div>`;
+}
+function bindTools(){
+  document.getElementById("exp").onclick = () => {
+    const blob = new Blob([JSON.stringify(db,null,1)],{type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "gym-log-"+todayStr()+".json"; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  };
+  document.getElementById("imp").onchange = async e => {
+    const f = e.target.files[0]; if(!f) return;
+    try{
+      const data = JSON.parse(await f.text());
+      if(!data || typeof data.logs!=="object") throw 0;
+      if(!confirm("Replace current data with this backup?")) return;
+      db = data; save(); render(); toast("Backup restored");
+    }catch{ toast("Not a valid backup file"); }
+  };
+}
+
+let tt; function toast(t){ const el=document.getElementById("toast"); el.textContent=t; el.classList.add("show"); clearTimeout(tt); tt=setTimeout(()=>el.classList.remove("show"),1200); }
+
+render();
+if(navigator.storage?.persist) navigator.storage.persist();
+if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
